@@ -11,6 +11,7 @@ import {
     Users
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { getApiUrl } from '../lib/api'
 
 interface Message {
     role: 'user' | 'assistant'
@@ -51,7 +52,7 @@ export default function MockInterview() {
             const formData = new FormData()
             formData.append('evaluation_id', evaluationId!)
 
-            const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/interview/start`, {
+            const response = await fetch(getApiUrl('/interview/start'), {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`
@@ -98,7 +99,7 @@ export default function MockInterview() {
             formData.append('session_id', sessionId)
             formData.append('user_answer', userMsg)
 
-            const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/interview/chat`, {
+            const response = await fetch(getApiUrl('/interview/chat'), {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`

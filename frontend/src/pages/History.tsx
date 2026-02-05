@@ -14,6 +14,7 @@ import {
     Loader2
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { getApiUrl } from '../lib/api'
 
 interface Evaluation {
     id: string
@@ -47,8 +48,7 @@ export default function History() {
             const { data: { session } } = await supabase.auth.getSession()
             const token = session?.access_token
 
-            const baseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000/api'
-            const response = await fetch(`${baseUrl}/history`, {
+            const response = await fetch(getApiUrl('/history'), {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
@@ -77,8 +77,7 @@ export default function History() {
             const formData = new FormData()
             formData.append('evaluation_id', evaluationId)
 
-            const baseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000/api'
-            const response = await fetch(`${baseUrl}${endpoint}`, {
+            const response = await fetch(getApiUrl(endpoint), {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`

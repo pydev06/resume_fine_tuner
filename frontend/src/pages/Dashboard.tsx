@@ -6,6 +6,7 @@ import EvaluationResult from '../components/EvaluationResult'
 import { supabase } from '../lib/supabase'
 import axios from 'axios'
 import { Sparkles, ArrowRight } from 'lucide-react'
+import { getApiUrl } from '../lib/api'
 
 export default function Dashboard() {
     const location = useLocation()
@@ -56,9 +57,7 @@ export default function Dashboard() {
                 formData.append('job_description_url', jdUrl)
             }
 
-            // Fetch Backend URL from env or default to localhost
-            const baseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000/api'
-            const analyzeUrl = `${baseUrl}/analyze`
+            const analyzeUrl = getApiUrl('/analyze')
 
             const response = await axios.post(analyzeUrl, formData, {
                 headers: {
