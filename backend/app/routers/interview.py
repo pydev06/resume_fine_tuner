@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Form
-from app.services.supabase_service import supabase
-from app.services.interview_service import start_interview, chat_interview
-from app.dependencies import get_current_user
+from ..services.supabase_service import supabase
+from ..services.interview_service import start_interview, chat_interview
+from ..dependencies import get_current_user
 import json
 
 router = APIRouter()

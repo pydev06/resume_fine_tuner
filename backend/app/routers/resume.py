@@ -1,12 +1,12 @@
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
 from fastapi.responses import Response
-from app.services.resume_parser import parse_resume
-from app.services.openai_service import analyze_resume, parse_resume_structure
-from app.services.scraper_service import scrape_job_description
-from app.services.pdf_service import generate_resume_pdf
-from app.services.docx_service import generate_tailored_docx
+from ..services.resume_parser import parse_resume
+from ..services.openai_service import analyze_resume, parse_resume_structure
+from ..services.scraper_service import scrape_job_description
+from ..services.pdf_service import generate_resume_pdf
+from ..services.docx_service import generate_tailored_docx
 import requests
-from app.services.supabase_service import (
+from ..services.supabase_service import (
     upload_resume_to_storage,
     save_resume_record,
     save_job_description,
@@ -15,7 +15,7 @@ from app.services.supabase_service import (
     get_user_resumes,
     supabase  # Import supabase client for caching queries
 )
-from app.dependencies import get_current_user
+from ..dependencies import get_current_user
 from typing import Optional
 
 router = APIRouter()
