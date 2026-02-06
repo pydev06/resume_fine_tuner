@@ -40,10 +40,13 @@ async def start_interview_endpoint(
         # 3. No active session found, get first question from AI
         ai_response = start_interview(resume_text, jd_text)
         
+        if "error" in ai_response:
+            raise HTTPException(status_code=400, detail=f"AI Interviewer failed: {ai_response['error']}")
+
         # 4. Create interview session in Supabase
         first_message = {
             "role": "assistant",
-            "content": ai_response["next_question"],
+            "content": ai_response.get("next_question", "Ready when you are!"),
             "feedback": ai_response.get("feedback", ""),
             "context_clue": ai_response.get("context_clue", "")
         }
