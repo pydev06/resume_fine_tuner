@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Form, UploadFile, File, Response
-from ..services.supabase_service import supabase
+from ..services.supabase_service import supabase, get_user_credits, deduct_user_credits
 from ..services.interview_service import start_interview, chat_interview, transcribe_audio, generate_speech
 from ..dependencies import get_current_user
 import json
@@ -12,7 +12,17 @@ async def start_interview_endpoint(
     current_user = Depends(get_current_user)
 ):
     try:
-        # 1. Fetch evaluation context
+        user_id = current_user.user.id
+        
+        # 1. Check if user has credits
+        credits = get_user_credits(user_id)
+        if credits <= 0:
+            raise HTTPException(
+                status_code=402, 
+                detail="Insufficient credits. Please top up to start a new interview."
+            )
+
+        # 2. Get evaluation context (Resume + JD)
         response = supabase.table("evaluations").select("*, resumes(parsed_text), job_descriptions(content)").eq("id", evaluation_id).execute()
         
         if not response.data:
@@ -64,6 +74,9 @@ async def start_interview_endpoint(
             raise Exception("Failed to create interview session")
             
         session = session_response.data[0]
+        
+        # Deduct 1 credit for starting a session
+        deduct_user_credits(user_id, 1)
         
         return {
             "session_id": session["id"],

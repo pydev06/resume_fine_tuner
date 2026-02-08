@@ -11,10 +11,14 @@ import {
     AlertCircle,
     MessageSquare,
     Download,
-    Loader2
+    Loader2,
+    Plus,
+    Archive,
+    Trash2
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { getApiUrl } from '../lib/api'
+import AnalysisChart from '../components/AnalysisChart'
 
 interface Evaluation {
     id: string
@@ -28,6 +32,7 @@ interface Evaluation {
     }
     job_descriptions: {
         title: string
+        company: string
         content: string
     }
 }
@@ -105,6 +110,34 @@ export default function History() {
         }
     }
 
+    const handleDelete = async (evaluationId: string) => {
+        if (!window.confirm('Are you sure you want to delete this analysis? This will also remove the resume if it is not used in other evaluations. This action cannot be undone.')) {
+            return
+        }
+
+        try {
+            const { data: { session } } = await supabase.auth.getSession()
+            const token = session?.access_token
+
+            const response = await fetch(getApiUrl(`/history/${evaluationId}`), {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            })
+
+            if (response.ok) {
+                setEvaluations(evaluations.filter(e => e.id !== evaluationId))
+            } else {
+                const error = await response.json()
+                alert(`Error: ${error.detail || 'Failed to delete'}`)
+            }
+        } catch (error) {
+            console.error('Error deleting evaluation:', error)
+            alert('An error occurred during deletion.')
+        }
+    }
+
     const formatDate = (dateString: string) => {
         return new Date(dateString).toLocaleDateString('en-US', {
             year: 'numeric',
@@ -119,6 +152,18 @@ export default function History() {
         setExpandedId(expandedId === id ? null : id)
     }
 
+    const chartData = [...evaluations]
+        .reverse()
+        .map(e => ({
+            date: new Date(e.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+            score: e.score || e.analysis_json?.match_score || 0,
+            ats: e.ats_score || e.analysis_json?.ats_score || 0,
+            company: e.job_descriptions?.company || '',
+            title: e.job_descriptions?.title || '',
+            // Include raw JD object for extra safety in tooltip
+            jd_metadata: e.job_descriptions || {}
+        }));
+
     if (loading) {
         return (
             <div className="flex items-center justify-center min-h-[400px]">
@@ -128,179 +173,238 @@ export default function History() {
     }
 
     return (
-        <div className="space-y-8 animate-fade-in">
-            <div className="flex items-center justify-between">
+        <div className="space-y-12 animate-slide-up">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-8">
                 <div>
-                    <h1 className="text-3xl font-bold text-gray-900">Analysis History</h1>
-                    <p className="text-gray-500 mt-2">View your past resume evaluations</p>
+                    <h1 className="text-4xl font-black text-white tracking-tighter">Analysis History</h1>
+                    <p className="text-slate-500 mt-2 font-bold uppercase tracking-widest text-[10px]">Archives of your career progression</p>
                 </div>
                 <button
                     onClick={() => navigate('/dashboard')}
-                    className="px-6 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors font-semibold shadow-lg shadow-indigo-100"
+                    className="w-full md:w-auto px-8 py-3.5 bg-indigo-600 text-white rounded-2xl hover:bg-indigo-500 transition-all font-black text-xs uppercase tracking-[0.2em] shadow-2xl shadow-indigo-600/20 active:scale-95 flex items-center justify-center"
                 >
-                    New Analysis
+                    <Plus className="w-4 h-4 mr-2" />
+                    Initiate New Analysis
                 </button>
             </div>
 
             {evaluations.length === 0 ? (
-                <div className="bg-white rounded-2xl border-2 border-dashed border-gray-200 p-12 text-center">
-                    <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                    <h3 className="text-lg font-semibold text-gray-900 mb-2">No analysis history yet</h3>
-                    <p className="text-gray-500 mb-6">Start analyzing resumes to see your history here</p>
+                <div className="glass-card rounded-[3rem] border-white/5 p-20 text-center relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-10 opacity-5">
+                        <Archive className="w-32 h-32 text-white" />
+                    </div>
+                    <div className="w-20 h-20 bg-white/5 rounded-3xl flex items-center justify-center mx-auto mb-8 border border-white/5">
+                        <FileText className="w-10 h-10 text-slate-500" />
+                    </div>
+                    <h3 className="text-2xl font-black text-white mb-3 tracking-tight">No analysis history found</h3>
+                    <p className="text-slate-400 mb-10 font-medium">Your career evolution starts with your first upload.</p>
                     <button
                         onClick={() => navigate('/dashboard')}
-                        className="px-6 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors font-semibold"
+                        className="px-10 py-4 bg-white/5 border border-white/10 text-white rounded-2xl transition-all font-black text-xs uppercase tracking-widest hover:bg-white/10"
                     >
                         Analyze Resume
                     </button>
                 </div>
             ) : (
-                <div className="grid grid-cols-1 gap-6">
-                    {evaluations.map((evaluation) => {
-                        const isExpanded = expandedId === evaluation.id
-                        const analysis = evaluation.analysis_json || {}
-
-                        return (
-                            <div
-                                key={evaluation.id}
-                                className={`bg-white rounded-2xl shadow-lg border transition-all duration-300 ${isExpanded ? 'border-indigo-200 shadow-indigo-100/50' : 'border-gray-100 shadow-gray-200/50'}`}
-                            >
-                                {/* Card Header */}
-                                <div className="p-6">
-                                    <div className="flex items-start justify-between mb-4">
-                                        <div className="flex-1">
-                                            <div className="flex items-center space-x-3 mb-2">
-                                                <div className="p-2 bg-indigo-50 rounded-lg">
-                                                    <FileText className="w-5 h-5 text-indigo-600" />
-                                                </div>
-                                                <h3 className="font-bold text-gray-900 line-clamp-1">{evaluation.resumes?.filename || 'Resume'}</h3>
-                                            </div>
-                                            <div className="flex items-center space-x-3 text-sm text-gray-500">
-                                                <Briefcase className="w-4 h-4 text-gray-400" />
-                                                <span className="line-clamp-1 font-medium">{evaluation.job_descriptions?.title || 'Job Description'}</span>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center space-x-6 bg-gray-50 px-6 py-3 rounded-2xl border border-gray-100">
-                                            <div className="text-center">
-                                                <div className="flex items-center space-x-1 text-2xl font-black text-indigo-600">
-                                                    <span>{evaluation.score || analysis.match_score || 0}</span>
-                                                    <span className="text-xs text-indigo-400 font-bold">%</span>
-                                                </div>
-                                                <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">Match</p>
-                                            </div>
-                                            <div className="w-px h-8 bg-gray-200" />
-                                            <div className="text-center">
-                                                <div className="text-2xl font-black text-emerald-600">
-                                                    <span>{evaluation.ats_score || analysis.ats_score || 0}</span>
-                                                    <span className="text-xs text-emerald-400 font-bold">%</span>
-                                                </div>
-                                                <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">ATS</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-                                        <div className="flex items-center space-x-2 text-sm text-gray-400 font-medium">
-                                            <Clock className="w-4 h-4" />
-                                            <span>{formatDate(evaluation.created_at)}</span>
-                                        </div>
-                                        <button
-                                            onClick={() => toggleExpand(evaluation.id)}
-                                            className="flex items-center space-x-2 text-sm text-indigo-600 hover:text-indigo-700 font-bold transition-all px-4 py-2 hover:bg-indigo-50 rounded-xl"
-                                        >
-                                            <span>{isExpanded ? 'Hide Details' : 'View Details'}</span>
-                                            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* Expanded Details */}
-                                {isExpanded && (
-                                    <div className="border-t border-indigo-50 bg-gray-50/30 p-8 space-y-8 animate-fade-in rounded-b-2xl">
-                                        {/* AI Optimization Feedback */}
-                                        {analysis.optimization_feedback && (
-                                            <div className="bg-white p-6 rounded-2xl border border-indigo-100 shadow-sm flex items-start space-x-4">
-                                                <div className="p-2 bg-indigo-600 rounded-xl mt-1 shadow-lg shadow-indigo-100">
-                                                    <TrendingUp className="w-5 h-5 text-white" />
-                                                </div>
-                                                <div>
-                                                    <h4 className="font-bold text-indigo-900 text-sm mb-1 uppercase tracking-tight">AI Optimization Insight</h4>
-                                                    <p className="text-indigo-800/80 text-sm leading-relaxed font-medium">{analysis.optimization_feedback}</p>
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* Action Buttons */}
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <button
-                                                onClick={() => navigate(`/interview/${evaluation.id}`)}
-                                                className="flex items-center justify-center space-x-3 px-8 py-4 bg-white text-indigo-600 border-2 border-indigo-600 rounded-2xl font-bold hover:bg-indigo-600 hover:text-white transition-all shadow-lg shadow-gray-100 active:scale-95"
-                                            >
-                                                <MessageSquare className="w-5 h-5" />
-                                                <span>Start Mock Interview</span>
-                                            </button>
-
-                                            {evaluation.resumes?.filename?.toLowerCase().endsWith('.docx') ? (
-                                                <button
-                                                    onClick={() => handleDownload(evaluation.id, evaluation.resumes.filename)}
-                                                    disabled={downloadingId === evaluation.id}
-                                                    className="flex items-center justify-center space-x-3 px-8 py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-200 disabled:opacity-50 active:scale-95"
-                                                >
-                                                    {downloadingId === evaluation.id ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
-                                                    <span>{downloadingId === evaluation.id ? 'Tailoring...' : 'Download Tailored (.docx)'}</span>
-                                                </button>
-                                            ) : (
-                                                <div className="bg-amber-50 border border-amber-200 px-6 py-4 rounded-2xl flex items-center space-x-4">
-                                                    <div className="p-2 bg-amber-200 rounded-xl shadow-sm">
-                                                        <FileText className="w-5 h-5 text-amber-700" />
-                                                    </div>
-                                                    <p className="text-xs font-bold text-amber-800 leading-tight">
-                                                        Upload a <b className="text-amber-900">.docx</b> file to enable tailored downloads with preserved formatting.
-                                                    </p>
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* Stats Grid */}
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                            {/* Strengths */}
-                                            {analysis.strengths && (
-                                                <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-                                                    <h4 className="font-bold text-gray-900 mb-4 flex items-center">
-                                                        <CheckCircle className="w-5 h-5 mr-3 text-emerald-500" />
-                                                        Key Strengths
-                                                    </h4>
-                                                    <ul className="space-y-3">
-                                                        {analysis.strengths.slice(0, 4).map((s: string, i: number) => (
-                                                            <li key={i} className="text-sm text-gray-600 font-medium flex items-start">
-                                                                <span className="text-emerald-500 mr-2">●</span> {s}
-                                                            </li>
-                                                        ))}
-                                                    </ul>
-                                                </div>
-                                            )}
-
-                                            {/* Skills Gap */}
-                                            {analysis.key_missing_skills && (
-                                                <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-                                                    <h4 className="font-bold text-gray-900 mb-4 flex items-center">
-                                                        <AlertCircle className="w-5 h-5 mr-3 text-orange-500" />
-                                                        Missing Skills
-                                                    </h4>
-                                                    <ul className="space-y-3">
-                                                        {analysis.key_missing_skills.slice(0, 4).map((s: string, i: number) => (
-                                                            <li key={i} className="text-sm text-gray-600 font-medium flex items-start">
-                                                                <span className="text-orange-500 mr-2">●</span> {s}
-                                                            </li>
-                                                        ))}
-                                                    </ul>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
+                <div className="space-y-12">
+                    {/* Career Velocity Section */}
+                    <div className="glass-card rounded-[3rem] border-white/5 p-10 relative overflow-hidden group">
+                        <div className="flex flex-col md:flex-row items-start justify-between gap-8 mb-4">
+                            <div>
+                                <h2 className="text-xl font-black text-white tracking-tight flex items-center">
+                                    <TrendingUp className="w-5 h-5 mr-3 text-indigo-400" />
+                                    Career Velocity
+                                </h2>
+                                <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mt-1">Neural score analysis over time</p>
                             </div>
-                        )
-                    })}
+                            <div className="bg-indigo-500/10 px-4 py-2 rounded-xl border border-indigo-500/20">
+                                <span className="text-xs font-black text-indigo-400 uppercase tracking-widest">
+                                    {evaluations.length} Scans Completed
+                                </span>
+                            </div>
+                        </div>
+
+                        <AnalysisChart data={chartData} />
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-8">
+                        {evaluations.map((evaluation, idx) => {
+                            const isExpanded = expandedId === evaluation.id
+                            const analysis = evaluation.analysis_json || {}
+
+                            return (
+                                <div
+                                    key={evaluation.id}
+                                    className={`glass-card rounded-[2.5rem] border-white/5 transition-all duration-500 hover:bg-white/[0.03] overflow-hidden ${isExpanded ? 'ring-2 ring-indigo-500/20' : ''}`}
+                                    style={{ animationDelay: `${idx * 0.05}s` }}
+                                >
+                                    {/* Card Header */}
+                                    <div className="p-8">
+                                        <div className="flex flex-col lg:flex-row items-start justify-between gap-8 mb-8">
+                                            <div className="flex-1 space-y-4">
+                                                <div className="flex items-center space-x-4">
+                                                    <div className="p-3 bg-indigo-400/10 rounded-2xl border border-indigo-400/20">
+                                                        <FileText className="w-6 h-6 text-indigo-400" />
+                                                    </div>
+                                                    <h3 className="text-2xl font-black text-white tracking-tight line-clamp-1">
+                                                        {evaluation.resumes?.filename || 'Resume'}
+                                                    </h3>
+                                                </div>
+                                                <div className="flex items-center space-x-4 text-slate-400">
+                                                    <Briefcase className="w-4 h-4 text-slate-600" />
+                                                    <span className="text-sm font-bold tracking-tight line-clamp-1 bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
+                                                        {(evaluation.job_descriptions?.title || 'Target Job')}
+                                                        {evaluation.job_descriptions?.company && ` @ ${evaluation.job_descriptions.company}`}
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 sm:gap-6 bg-white/5 px-4 sm:px-8 py-4 sm:py-5 rounded-[1.5rem] sm:rounded-[2rem] border border-white/5 shadow-inner backdrop-blur-3xl min-w-0 sm:min-w-[280px] justify-center">
+                                                <div className="flex sm:block items-center justify-between sm:text-center px-2">
+                                                    <div className="flex items-center justify-center space-x-1 text-2xl sm:text-3xl font-black text-indigo-400 tracking-tighter">
+                                                        <span>{evaluation.score || analysis.match_score || 0}</span>
+                                                        <span className="text-xs text-indigo-400/50 font-black">%</span>
+                                                    </div>
+                                                    <p className="text-[9px] sm:text-[10px] font-black text-indigo-500/50 uppercase tracking-[0.2em] mt-1">Match</p>
+                                                </div>
+                                                <div className="hidden sm:block w-px h-10 bg-white/5" />
+                                                <div className="block sm:hidden h-px w-full bg-white/5" />
+                                                <div className="flex sm:block items-center justify-between sm:text-center px-2">
+                                                    <div className="flex items-center justify-center space-x-1 text-2xl sm:text-3xl font-black text-emerald-400 tracking-tighter">
+                                                        <span>{evaluation.ats_score || analysis.ats_score || 0}</span>
+                                                        <span className="text-xs text-emerald-400/50 font-black">%</span>
+                                                    </div>
+                                                    <p className="text-[9px] sm:text-[10px] font-black text-emerald-500/50 uppercase tracking-[0.2em] mt-1">ATS</p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between pt-6 border-t border-white/5 space-y-4 sm:space-y-0">
+                                            <div className="flex items-center space-x-3 text-[10px] sm:text-xs font-black text-slate-500 uppercase tracking-widest">
+                                                <Clock className="w-4 h-4 text-slate-600" />
+                                                <span>{formatDate(evaluation.created_at)}</span>
+                                            </div>
+                                            <div className="flex items-center space-x-2">
+                                                <button
+                                                    onClick={() => toggleExpand(evaluation.id)}
+                                                    className="flex-1 sm:flex-none flex items-center justify-center space-x-3 text-[10px] sm:text-xs font-black text-indigo-400 uppercase tracking-widest px-4 sm:px-6 py-2.5 bg-white/5 rounded-xl hover:bg-white/10 transition-all border border-white/5"
+                                                >
+                                                    <span>{isExpanded ? 'Hide Intel' : 'View Intel'}</span>
+                                                    {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDelete(evaluation.id)}
+                                                    className="p-2.5 text-slate-500 hover:text-red-400 hover:bg-red-400/10 rounded-xl transition-all group"
+                                                    title="Delete Analysis"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Expanded Details */}
+                                    {isExpanded && (
+                                        <div className="border-t border-white/5 bg-white/[0.01] p-10 space-y-10 animate-slide-up">
+                                            {/* AI Insight */}
+                                            {analysis.optimization_feedback && (
+                                                <div className="bg-gradient-to-r from-indigo-500/10 to-purple-500/10 p-8 rounded-[2rem] border border-white/5 shadow-2xl flex items-start space-x-6 backdrop-blur-xl">
+                                                    <div className="p-4 bg-indigo-600 rounded-2xl shadow-lg ring-1 ring-white/20">
+                                                        <TrendingUp className="w-6 h-6 text-white" />
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="font-black text-white text-sm mb-2 uppercase tracking-tight">Neural Optimization Insight</h4>
+                                                        <p className="text-slate-400 text-sm leading-relaxed font-bold">{analysis.optimization_feedback}</p>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* View JD Content */}
+                                            {evaluation.job_descriptions?.content && (
+                                                <div className="space-y-4">
+                                                    <div className="flex items-center space-x-3 text-[10px] font-black text-slate-600 uppercase tracking-[0.2em]">
+                                                        <FileText className="w-3.5 h-3.5" />
+                                                        <span>Targeted Job Description</span>
+                                                    </div>
+                                                    <div className="bg-white/[0.02] border border-white/5 p-6 rounded-2xl max-h-40 overflow-y-auto group/jd hover:bg-white/[0.04] transition-all">
+                                                        <p className="text-xs text-slate-500/60 font-medium leading-relaxed group-hover/jd:text-slate-500 transition-colors whitespace-pre-wrap">
+                                                            {evaluation.job_descriptions.content}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Actions */}
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                <button
+                                                    onClick={() => navigate(`/interview/${evaluation.id}`)}
+                                                    className="flex items-center justify-center space-x-4 px-10 py-5 bg-white/5 border border-white/10 text-white rounded-3xl font-black text-xs uppercase tracking-widest hover:bg-white/10 transition-all active:scale-95"
+                                                >
+                                                    <MessageSquare className="w-5 h-5 text-indigo-400" />
+                                                    <span>Mock Simulator</span>
+                                                </button>
+
+                                                {evaluation.resumes?.filename?.toLowerCase().endsWith('.docx') ? (
+                                                    <button
+                                                        onClick={() => handleDownload(evaluation.id, evaluation.resumes.filename)}
+                                                        disabled={downloadingId === evaluation.id}
+                                                        className="flex items-center justify-center space-x-4 px-10 py-5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl shadow-indigo-600/20 active:scale-95 disabled:opacity-50"
+                                                    >
+                                                        {downloadingId === evaluation.id ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
+                                                        <span>{downloadingId === evaluation.id ? 'Refining...' : 'Download Tailored'}</span>
+                                                    </button>
+                                                ) : (
+                                                    <div className="bg-amber-500/5 border border-amber-500/20 px-8 py-5 rounded-[2rem] flex items-center space-x-4">
+                                                        <div className="p-2 bg-amber-400/10 rounded-xl">
+                                                            <AlertCircle className="w-5 h-5 text-amber-400" />
+                                                        </div>
+                                                        <p className="text-[10px] font-black text-amber-400 uppercase tracking-widest leading-relaxed">
+                                                            Upload <span className="text-white">.docx</span> source to unlock <br /> tailored downloads with formatting.
+                                                        </p>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Competency Grids */}
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                                {analysis.strengths && (
+                                                    <div className="p-8 bg-emerald-500/5 rounded-[2rem] border border-emerald-500/10 h-full">
+                                                        <h4 className="font-black text-white text-lg mb-6 flex items-center tracking-tight">
+                                                            <CheckCircle className="w-5 h-5 mr-3 text-emerald-400" />
+                                                            Competitive Edges
+                                                        </h4>
+                                                        <ul className="space-y-4">
+                                                            {analysis.strengths.slice(0, 4).map((s: string, i: number) => (
+                                                                <li key={i} className="text-sm text-slate-400 font-bold tracking-tight flex items-start group transition-colors hover:text-white">
+                                                                    <span className="text-emerald-500 mr-4 font-black">→</span> {s}
+                                                                </li>
+                                                            ))}
+                                                        </ul>
+                                                    </div>
+                                                )}
+
+                                                {analysis.key_missing_skills && (
+                                                    <div className="p-8 bg-red-500/5 rounded-[2rem] border border-red-500/10 h-full">
+                                                        <h4 className="font-black text-white text-lg mb-6 flex items-center tracking-tight">
+                                                            <AlertCircle className="w-5 h-5 mr-3 text-red-400" />
+                                                            Missing Skillsets
+                                                        </h4>
+                                                        <ul className="space-y-4">
+                                                            {analysis.key_missing_skills.slice(0, 4).map((s: string, i: number) => (
+                                                                <li key={i} className="text-sm text-slate-400 font-bold tracking-tight flex items-start group transition-colors hover:text-white">
+                                                                    <span className="text-red-500 mr-4 font-black">×</span> {s}
+                                                                </li>
+                                                            ))}
+                                                        </ul>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )
+                        })}
+                    </div>
                 </div>
             )}
         </div>

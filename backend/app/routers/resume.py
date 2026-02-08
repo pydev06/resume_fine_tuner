@@ -13,7 +13,10 @@ from ..services.supabase_service import (
     save_evaluation,
     get_user_evaluations,
     get_user_resumes,
-    supabase  # Import supabase client for caching queries
+    supabase,
+    get_user_credits,
+    deduct_user_credits,
+    delete_user_evaluation
 )
 from ..dependencies import get_current_user
 from typing import Optional
@@ -22,16 +25,30 @@ router = APIRouter()
 
 @router.post("/analyze")
 async def analyze_resume_endpoint(
-    resume: UploadFile = File(...),
+    resume: Optional[UploadFile] = File(None),
+    resume_id: Optional[str] = Form(None),
     job_description: Optional[str] = Form(None),
     job_description_url: Optional[str] = Form(None),
+    job_title: Optional[str] = Form(None),
+    company_name: Optional[str] = Form(None),
     current_user = Depends(get_current_user)
 ):
     if not job_description and not job_description_url:
         raise HTTPException(status_code=400, detail="Either job description text or URL is required")
+    
+    if not resume and not resume_id:
+        raise HTTPException(status_code=400, detail="Either a resume file or an existing resume ID is required")
 
     # Extract user ID from UserResponse object
     user_id = current_user.user.id
+
+    # 0. Check credits
+    credits = get_user_credits(user_id)
+    if credits <= 0:
+        raise HTTPException(
+            status_code=402, 
+            detail="Insufficient credits. Please top up to analyze a new resume."
+        )
 
     # 1. Get JD Text
     jd_text = job_description
@@ -44,18 +61,32 @@ async def analyze_resume_endpoint(
         # Extract title from first line or URL
         jd_title = jd_text.split('\n')[0][:100] if jd_text else job_description_url
 
-    # 2. Read and parse file
-    try:
-        content = await resume.read()
-        resume_text = parse_resume(content, resume.filename)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error parsing file: {str(e)}")
-
-    # 3. Upload resume to storage
-    try:
-        file_url = upload_resume_to_storage(user_id, content, resume.filename)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error uploading file: {str(e)}")
+    # 2. Get Resume Text (from file or ID)
+    resume_text = ""
+    filename = ""
+    file_url = ""
+    
+    if resume_id:
+        # Fetch existing resume from DB
+        resp = supabase.table("resumes").select("*").eq("id", resume_id).eq("user_id", user_id).execute()
+        if not resp.data:
+            raise HTTPException(status_code=404, detail="Resume not found")
+        resume_record = resp.data[0]
+        resume_text = resume_record["parsed_text"]
+        filename = resume_record["filename"]
+        file_url = resume_record["file_url"]
+    else:
+        # Parse new file
+        if not resume:
+             raise HTTPException(status_code=400, detail="Resume file is required")
+        try:
+            content = await resume.read()
+            filename = resume.filename
+            resume_text = parse_resume(content, filename)
+            # Upload new resume to storage
+            file_url = upload_resume_to_storage(user_id, content, filename)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Error parsing/uploading file: {str(e)}")
 
     # 4. Check if this resume+JD combination was already analyzed (caching)
     is_refresh = False
@@ -96,6 +127,9 @@ async def analyze_resume_endpoint(
         print(f"Error checking cache: {str(e)}")
 
     # 5. Analyze (only if not cached or stale)
+    # Deduct 1 credit for new analysis
+    deduct_user_credits(user_id, 1)
+    
     analysis_result = analyze_resume(resume_text, jd_text)
     
     if "error" in analysis_result:
@@ -115,7 +149,7 @@ async def analyze_resume_endpoint(
             resume_record = save_resume_record(user_id, file_url, resume.filename, resume_text)
             current_resume_id = resume_record["id"]
             
-            jd_record = save_job_description(user_id, jd_text, job_description_url, jd_title)
+            jd_record = save_job_description(user_id, jd_text, job_description_url, job_title or jd_title, company_name)
             current_jd_id = jd_record["id"]
         
         # Save or Update evaluation
@@ -154,6 +188,19 @@ async def get_history(
         return {"evaluations": evaluations}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching history: {str(e)}")
+
+
+@router.delete("/history/{evaluation_id}")
+async def delete_evaluation(
+    evaluation_id: str,
+    current_user = Depends(get_current_user)
+):
+    """Delete a specific evaluation from history"""
+    user_id = current_user.user.id
+    success = delete_user_evaluation(user_id, evaluation_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Evaluation not found or could not be deleted")
+    return {"status": "success", "message": "Evaluation deleted"}
 
 
 @router.get("/resumes")

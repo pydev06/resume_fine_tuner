@@ -17,18 +17,46 @@ export default function Login() {
     }, [navigate])
 
     return (
-        <div className="flex min-h-full flex-1 flex-col justify-center px-6 py-12 lg:px-8">
-            <div className="sm:mx-auto sm:w-full sm:max-w-sm">
-                <h2 className="mt-10 text-center text-2xl font-bold leading-9 tracking-tight text-gray-900">
-                    Sign in to your account
-                </h2>
+        <div className="flex min-h-screen bg-[#020617] relative flex-col justify-center px-6 py-12 lg:px-8 overflow-hidden">
+            {/* Mesh Gradient Background */}
+            <div className="absolute top-0 left-0 w-full h-full -z-10">
+                <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-indigo-500/10 blur-[120px]" />
+                <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-purple-500/10 blur-[120px]" />
             </div>
 
-            <div className="mt-10 sm:mx-auto sm:w-full sm:max-w-sm border p-8 rounded-xl shadow-sm bg-white">
+            <div className="sm:mx-auto sm:w-full sm:max-w-sm animate-slide-up">
+                <div className="flex justify-center mb-6">
+                    <div className="p-3 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl shadow-xl shadow-indigo-600/20">
+                        <span className="text-white text-xl font-black tracking-tighter">AI</span>
+                    </div>
+                </div>
+                <h2 className="text-center text-3xl font-black tracking-tighter text-white">
+                    Access Intelligence
+                </h2>
+                <p className="mt-2 text-center text-sm font-medium text-slate-400">
+                    Sign in to resume analysis
+                </p>
+            </div>
+
+            <div className="mt-10 sm:mx-auto sm:w-full sm:max-w-sm glass-card p-10 rounded-[2.5rem] border-white/5 shadow-2xl animate-slide-up" style={{ animationDelay: '0.1s' }}>
                 <Auth
                     supabaseClient={supabase}
-                    appearance={{ theme: ThemeSupa }}
-                    theme="light"
+                    appearance={{
+                        theme: ThemeSupa,
+                        variables: {
+                            default: {
+                                colors: {
+                                    brand: '#4f46e5',
+                                    brandAccent: '#4338ca',
+                                    inputBackground: 'rgba(255, 255, 255, 0.05)',
+                                    inputText: 'white',
+                                    inputBorder: 'rgba(255, 255, 255, 0.1)',
+                                    inputPlaceholder: '#94a3b8',
+                                }
+                            }
+                        }
+                    }}
+                    theme="dark"
                     providers={[]}
                 />
             </div>
