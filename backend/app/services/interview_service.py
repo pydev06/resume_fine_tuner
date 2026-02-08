@@ -71,3 +71,37 @@ def chat_interview(resume_text: str, jd_text: str, message_history: list) -> dic
     except Exception as e:
         print(f"Error in interview chat: {e}")
         return {"error": str(e)}
+
+def transcribe_audio(audio_file) -> str:
+    try:
+        # Save temporary file because OpenAI requires a file object with a name/extension
+        import tempfile
+        import os
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as tmp:
+            tmp.write(audio_file.read())
+            tmp_path = tmp.name
+            
+        with open(tmp_path, "rb") as f:
+            transcript = client.audio.transcriptions.create(
+                model="whisper-1", 
+                file=f
+            )
+            
+        os.unlink(tmp_path)
+        return transcript.text
+    except Exception as e:
+        print(f"Error transcribing audio: {e}")
+        raise e
+
+def generate_speech(text: str):
+    try:
+        response = client.audio.speech.create(
+            model="tts-1",
+            voice="alloy",
+            input=text
+        )
+        return response.content # Returns the audio bytes
+    except Exception as e:
+        print(f"Error generating speech: {e}")
+        raise e

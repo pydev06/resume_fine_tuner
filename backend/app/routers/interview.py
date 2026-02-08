@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, Form
+from fastapi import APIRouter, Depends, HTTPException, Form, UploadFile, File, Response
 from ..services.supabase_service import supabase
-from ..services.interview_service import start_interview, chat_interview
+from ..services.interview_service import start_interview, chat_interview, transcribe_audio, generate_speech
 from ..dependencies import get_current_user
 import json
 
@@ -121,5 +121,27 @@ async def chat_interview_endpoint(
         return ai_response
         
     except Exception as e:
-        print(f"Error in interview chat: {str(e)}")
+        print(f"Error in interview chat: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/transcribe")
+async def transcribe_endpoint(
+    audio: UploadFile = File(...),
+    current_user = Depends(get_current_user)
+):
+    try:
+        text = transcribe_audio(audio.file)
+        return {"text": text}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
+
+@router.get("/speak")
+async def speak_endpoint(
+    text: str,
+    current_user = Depends(get_current_user)
+):
+    try:
+        audio_content = generate_speech(text)
+        return Response(content=audio_content, media_type="audio/mpeg")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Speech generation failed: {str(e)}")

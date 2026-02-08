@@ -8,10 +8,14 @@ import {
     Award,
     Loader2,
     CheckCircle2,
-    Users
+    Users,
+    Mic,
+    Volume2,
+    Square
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { getApiUrl } from '../lib/api'
+import { AudioRecorder } from '../lib/audio'
 
 interface Message {
     role: 'user' | 'assistant'
@@ -29,7 +33,11 @@ export default function MockInterview() {
     const [loading, setLoading] = useState(false)
     const [starting, setStarting] = useState(true)
     const [sessionId, setSessionId] = useState<string | null>(null)
+    const [isRecording, setIsRecording] = useState(false)
+    const [recordingLoading, setRecordingLoading] = useState(false)
+    const [playingMessageIdx, setPlayingMessageIdx] = useState<number | null>(null)
     const scrollRef = useRef<HTMLDivElement>(null)
+    const recorderRef = useRef<AudioRecorder>(new AudioRecorder())
 
     useEffect(() => {
         if (evaluationId) {
@@ -125,6 +133,76 @@ export default function MockInterview() {
         }
     }
 
+    const handleStartRecording = async () => {
+        try {
+            await recorderRef.current.start()
+            setIsRecording(true)
+        } catch (error) {
+            console.error('Error starting recording:', error)
+            alert('Could not access microphone. Please check permissions.')
+        }
+    }
+
+    const handleStopRecording = async () => {
+        try {
+            setIsRecording(false)
+            setRecordingLoading(true)
+            const audioBlob = await recorderRef.current.stop()
+
+            const { data: { session: authSession } } = await supabase.auth.getSession()
+            const token = authSession?.access_token
+
+            const formData = new FormData()
+            formData.append('audio', audioBlob)
+
+            const response = await fetch(getApiUrl('/interview/transcribe'), {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                },
+                body: formData
+            })
+
+            if (!response.ok) throw new Error('Transcription failed')
+            const { text } = await response.json()
+
+            if (text) {
+                setInput(text)
+            }
+        } catch (error) {
+            console.error('Error stopping recording:', error)
+            alert('Failed to transcribe audio.')
+        } finally {
+            setRecordingLoading(false)
+        }
+    }
+
+    const handlePlaySpeech = async (text: string, idx: number) => {
+        try {
+            setPlayingMessageIdx(idx)
+            const { data: { session: authSession } } = await supabase.auth.getSession()
+            const token = authSession?.access_token
+
+            const response = await fetch(`${getApiUrl('/interview/speak')}?text=${encodeURIComponent(text)}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            })
+
+            if (!response.ok) throw new Error('Speech generation failed')
+
+            const blob = await response.blob()
+            const url = URL.createObjectURL(blob)
+            const audio = new Audio(url)
+
+            audio.onended = () => setPlayingMessageIdx(null)
+            await audio.play()
+        } catch (error) {
+            console.error('Error playing speech:', error)
+            setPlayingMessageIdx(null)
+        }
+    }
+
     if (starting) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
@@ -178,9 +256,20 @@ export default function MockInterview() {
                                 className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}
                             >
                                 <div className={`max-w-[85%] ${msg.role === 'user' ? 'bg-indigo-600 text-white rounded-2xl rounded-tr-none py-3 px-5 shadow-lg shadow-indigo-100' : 'bg-gray-50 text-gray-800 rounded-2xl rounded-tl-none py-4 px-6 border border-gray-100'}`}>
-                                    <p className="text-sm md:text-base leading-relaxed">
-                                        {msg.content}
-                                    </p>
+                                    <div className="flex justify-between items-start">
+                                        <p className="text-sm md:text-base leading-relaxed flex-1">
+                                            {msg.content}
+                                        </p>
+                                        {msg.role === 'assistant' && (
+                                            <button
+                                                onClick={() => handlePlaySpeech(msg.content, idx)}
+                                                disabled={playingMessageIdx !== null}
+                                                className={`ml-2 p-1 rounded-lg transition-colors ${playingMessageIdx === idx ? 'bg-indigo-100 text-indigo-600' : 'text-gray-400 hover:bg-gray-100'}`}
+                                            >
+                                                <Volume2 className={`w-4 h-4 ${playingMessageIdx === idx ? 'animate-pulse' : ''}`} />
+                                            </button>
+                                        )}
+                                    </div>
 
                                     {msg.role === 'assistant' && msg.context_clue && (
                                         <div className="mt-4 flex items-start space-x-2 bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
@@ -230,8 +319,16 @@ export default function MockInterview() {
                                 className="flex-1 bg-white border border-gray-200 rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-inner"
                             />
                             <button
+                                type="button"
+                                onClick={isRecording ? handleStopRecording : handleStartRecording}
+                                disabled={loading || recordingLoading}
+                                className={`p-4 rounded-2xl transition-all shadow-lg ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}
+                            >
+                                {recordingLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : (isRecording ? <Square className="w-6 h-6" /> : <Mic className="w-6 h-6" />)}
+                            </button>
+                            <button
                                 type="submit"
-                                disabled={!input.trim() || loading}
+                                disabled={!input.trim() || loading || isRecording}
                                 className="p-4 bg-indigo-600 text-white rounded-2xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 disabled:opacity-50 disabled:shadow-none translate-y-0 active:translate-y-0.5"
                             >
                                 <Send className="w-6 h-6" />
