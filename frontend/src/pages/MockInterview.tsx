@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
     Send,
     ArrowLeft,
@@ -28,11 +28,14 @@ interface Message {
 export default function MockInterview() {
     const { evaluationId } = useParams()
     const navigate = useNavigate()
+    const [searchParams] = useSearchParams()
     const [messages, setMessages] = useState<Message[]>([])
     const [input, setInput] = useState('')
     const [loading, setLoading] = useState(false)
     const [starting, setStarting] = useState(true)
     const [sessionId, setSessionId] = useState<string | null>(null)
+    const [categorySlug, setCategorySlug] = useState<string>('generic')
+    const [categoryName, setCategoryName] = useState<string>('Generic')
     const [isRecording, setIsRecording] = useState(false)
     const [recordingLoading, setRecordingLoading] = useState(false)
     const [playingMessageIdx, setPlayingMessageIdx] = useState<number | null>(null)
@@ -40,10 +43,32 @@ export default function MockInterview() {
     const recorderRef = useRef<AudioRecorder>(new AudioRecorder())
 
     useEffect(() => {
-        if (evaluationId) {
+        // Read category from URL params
+        const category = searchParams.get('category') || 'generic'
+        setCategorySlug(category)
+        fetchCategoryName(category)
+    }, [searchParams])
+
+    const fetchCategoryName = async (slug: string) => {
+        try {
+            const { data: { session: authSession } } = await supabase.auth.getSession()
+            const token = authSession?.access_token
+            const response = await fetch(getApiUrl('/interview/categories'), {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            const data = await response.json()
+            const category = data.categories?.find((c: any) => c.slug === slug)
+            if (category) setCategoryName(category.name)
+        } catch (error) {
+            console.error('Error fetching category:', error)
+        }
+    }
+
+    useEffect(() => {
+        if (evaluationId && categorySlug) {
             startSession()
         }
-    }, [evaluationId])
+    }, [evaluationId, categorySlug])
 
     useEffect(() => {
         if (scrollRef.current) {
@@ -59,6 +84,7 @@ export default function MockInterview() {
 
             const formData = new FormData()
             formData.append('evaluation_id', evaluationId!)
+            formData.append('category_slug', categorySlug)
 
             const response = await fetch(getApiUrl('/interview/start'), {
                 method: 'POST',
@@ -244,9 +270,18 @@ export default function MockInterview() {
                     <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5 mr-2 group-hover:-translate-x-1 transition-transform" />
                     Back to Evaluation
                 </button>
-                <div className="flex items-center justify-center space-x-3 bg-emerald-500/10 px-5 py-2.5 rounded-full border border-emerald-500/20 shadow-lg shadow-emerald-500/10 self-center sm:self-auto">
-                    <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]"></div>
-                    <span className="text-[9px] sm:text-[10px] font-black text-emerald-400 uppercase tracking-widest">Live Session </span>
+                <div className="flex items-center space-x-3">
+                    {/* Category Badge */}
+                    <div className="flex items-center space-x-2 bg-indigo-500/10 px-4 py-2 rounded-full border border-indigo-500/20">
+                        <span className="text-[9px] sm:text-[10px] font-black text-indigo-400 uppercase tracking-widest">
+                            {categoryName}
+                        </span>
+                    </div>
+                    {/* Live Session Badge */}
+                    <div className="flex items-center space-x-3 bg-emerald-500/10 px-5 py-2.5 rounded-full border border-emerald-500/20 shadow-lg shadow-emerald-500/10">
+                        <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]"></div>
+                        <span className="text-[9px] sm:text-[10px] font-black text-emerald-400 uppercase tracking-widest">Live Session </span>
+                    </div>
                 </div>
             </div>
 

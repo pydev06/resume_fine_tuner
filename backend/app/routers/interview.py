@@ -1,14 +1,97 @@
 from fastapi import APIRouter, Depends, HTTPException, Form, UploadFile, File, Response
 from ..services.supabase_service import supabase, get_user_credits, deduct_user_credits
 from ..services.interview_service import start_interview, chat_interview, transcribe_audio, generate_speech
+from ..services.domain_detector import detect_domain
+from ..services.cache_service import ai_cache
 from ..dependencies import get_current_user
+from typing import Optional
 import json
 
 router = APIRouter()
 
+@router.get("/domains")
+async def get_domains(
+    current_user = Depends(get_current_user)
+):
+    """Get all active professional domains"""
+    try:
+        response = supabase.table("domains").select("*").eq("is_active", True).order("sort_order").execute()
+        return {"domains": response.data}
+    except Exception as e:
+        print(f"Error fetching domains: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/categories")
+async def get_categories(
+    domain: Optional[str] = None,
+    current_user = Depends(get_current_user)
+):
+    """Get all active interview categories, optionally filtered by domain"""
+    try:
+        query = supabase.table("interview_categories").select("*").eq("is_active", True)
+        
+        if domain:
+            query = query.eq("domain", domain)
+        
+        response = query.order("sort_order").execute()
+        return {"categories": response.data}
+    except Exception as e:
+        print(f"Error fetching categories: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/detect-domain")
+async def detect_domain_endpoint(
+    evaluation_id: str = Form(...),
+    current_user = Depends(get_current_user)
+):
+    """Auto-detect professional domain from resume and job description"""
+    try:
+        # Get evaluation context
+        response = supabase.table("evaluations").select("*, resumes(parsed_text), job_descriptions(content)").eq("id", evaluation_id).execute()
+        
+        if not response.data:
+            raise HTTPException(status_code=404, detail="Evaluation not found")
+        
+        evaluation = response.data[0]
+        resume_text = evaluation["resumes"]["parsed_text"]
+        jd_text = evaluation["job_descriptions"]["content"]
+        
+        # Check cache first
+        cache_key = ai_cache.generate_cache_key(
+            f"domain_detection:{resume_text[:100]}:{jd_text[:100]}",
+            {"evaluation_id": evaluation_id}
+        )
+        
+        cached_result = await ai_cache.get(cache_key)
+        if cached_result:
+            return cached_result
+        
+        # Detect domain
+        domain_slug, confidence = detect_domain(resume_text, jd_text)
+        
+        result = {
+            "domain": domain_slug,
+            "confidence": round(confidence, 2)
+        }
+        
+        # Cache the result
+        await ai_cache.set(
+            cache_key,
+            f"domain_detection:{evaluation_id}",
+            result,
+            cache_type='domain_detection'
+        )
+        
+        return result
+        
+    except Exception as e:
+        print(f"Error detecting domain: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/start")
 async def start_interview_endpoint(
     evaluation_id: str = Form(...),
+    category_slug: str = Form(default="generic"),
     current_user = Depends(get_current_user)
 ):
     try:
@@ -32,8 +115,8 @@ async def start_interview_endpoint(
         resume_text = evaluation["resumes"]["parsed_text"]
         jd_text = evaluation["job_descriptions"]["content"]
         
-        # 2. Check for an existing active session for this evaluation
-        existing_session = supabase.table("interview_sessions").select("*").eq("evaluation_id", evaluation_id).eq("user_id", current_user.user.id).eq("status", "active").order("created_at", desc=True).limit(1).execute()
+        # 2. Check for an existing active session for this evaluation + category
+        existing_session = supabase.table("interview_sessions").select("*").eq("evaluation_id", evaluation_id).eq("user_id", current_user.user.id).eq("category_slug", category_slug).eq("status", "active").order("created_at", desc=True).limit(1).execute()
         
         if existing_session.data:
             session = existing_session.data[0]
@@ -47,13 +130,19 @@ async def start_interview_endpoint(
                 "messages": messages # Return existing history
             }
 
-        # 3. No active session found, get first question from AI
-        ai_response = start_interview(resume_text, jd_text)
+        # 3. Fetch category details
+        category_response = supabase.table("interview_categories").select("*").eq("slug", category_slug).execute()
+        if not category_response.data:
+            raise HTTPException(status_code=404, detail=f"Category '{category_slug}' not found")
+        category = category_response.data[0]
+        
+        # 4. No active session found, get first question from AI with category
+        ai_response = start_interview(resume_text, jd_text, category_slug)
         
         if "error" in ai_response:
             raise HTTPException(status_code=400, detail=f"AI Interviewer failed: {ai_response['error']}")
 
-        # 4. Create interview session in Supabase
+        # 5. Create interview session in Supabase with category
         first_message = {
             "role": "assistant",
             "content": ai_response.get("next_question", "Ready when you are!"),
@@ -64,6 +153,8 @@ async def start_interview_endpoint(
         session_data = {
             "user_id": current_user.user.id,
             "evaluation_id": evaluation_id,
+            "category_id": category["id"],
+            "category_slug": category_slug,
             "messages": [first_message],
             "status": "active"
         }
@@ -106,12 +197,13 @@ async def chat_interview_endpoint(
         resume_text = evaluation["resumes"]["parsed_text"]
         jd_text = evaluation["job_descriptions"]["content"]
         messages = session["messages"]
+        category_slug = session.get("category_slug", "generic")
         
         # 2. Add user's answer to history
         messages.append({"role": "user", "content": user_answer})
         
-        # 3. Call AI for feedback and next question
-        ai_response = chat_interview(resume_text, jd_text, messages)
+        # 3. Call AI for feedback and next question with category
+        ai_response = chat_interview(resume_text, jd_text, messages, category_slug)
         
         # 4. Add AI response to history
         ai_message = {

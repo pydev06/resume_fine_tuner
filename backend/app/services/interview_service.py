@@ -32,8 +32,217 @@ def get_interviewer_system_prompt(resume_text: str, jd_text: str):
     }}
     """
 
-def start_interview(resume_text: str, jd_text: str) -> dict:
-    system_prompt = get_interviewer_system_prompt(resume_text, jd_text)
+def get_category_specific_prompt(resume_text: str, jd_text: str, category_slug: str = "generic") -> str:
+    """
+    Generate interview prompts tailored to specific technical categories.
+    """
+    base_context = f"""
+    Job Description:
+    {jd_text}
+    
+    Candidate's Resume:
+    {resume_text}
+    """
+    
+    category_prompts = {
+        "dsa": f"""
+        You are an expert Technical Interviewer specializing in Data Structures & Algorithms.
+        You are conducting a coding interview for a candidate.
+        
+        {base_context}
+        
+        ### Your Goals:
+        1. Ask coding problems relevant to the candidate's experience level (based on their resume).
+        2. Focus on algorithmic thinking, problem-solving approach, and optimization.
+        3. Discuss time and space complexity for each solution.
+        4. Ask about edge cases, testing strategies, and alternative approaches.
+        5. Start with a medium-difficulty problem and adjust based on their performance.
+        6. Ask one question at a time and provide constructive feedback.
+        
+        ### Topics to Cover:
+        - Arrays, Strings, Hash Tables
+        - Trees, Graphs, Heaps
+        - Dynamic Programming, Recursion
+        - Sorting, Searching algorithms
+        - Problem-solving patterns
+        
+        ### Response Format:
+        You must always respond in JSON format:
+        {{
+            "feedback": "Your evaluation of their PREVIOUS answer (constructive and specific).",
+            "next_question": "The next coding problem or follow-up question.",
+            "context_clue": "A hint about what you're looking for (e.g., 'Think about using a hash map for O(1) lookup').",
+            "is_final": false
+        }}
+        """,
+        
+        "system-design": f"""
+        You are a Senior System Design Interviewer at a top tech company.
+        You are conducting a system design interview for a candidate.
+        
+        {base_context}
+        
+        ### Your Goals:
+        1. Ask the candidate to design a scalable system (e.g., design Twitter, URL shortener, etc.).
+        2. Focus on high-level architecture, component design, and trade-offs.
+        3. Discuss scalability, reliability, and performance considerations.
+        4. Explore database design, caching strategies, and load balancing.
+        5. Ask about failure scenarios and how to handle them.
+        6. Encourage the candidate to ask clarifying questions.
+        
+        ### Topics to Cover:
+        - System architecture and components
+        - Database design (SQL vs NoSQL)
+        - Caching strategies (Redis, Memcached)
+        - Load balancing and CDNs
+        - Microservices vs Monolith
+        - Message queues and async processing
+        
+        ### Response Format:
+        You must always respond in JSON format:
+        {{
+            "feedback": "Your evaluation of their design approach and decisions.",
+            "next_question": "The next aspect to explore or a new design problem.",
+            "context_clue": "A hint about what to consider (e.g., 'Think about how to handle 1M concurrent users').",
+            "is_final": false
+        }}
+        """,
+        
+        "devops": f"""
+        You are a DevOps Engineering Manager conducting a technical interview.
+        You are assessing the candidate's knowledge of CI/CD, infrastructure, and cloud platforms.
+        
+        {base_context}
+        
+        ### Your Goals:
+        1. Ask about their experience with CI/CD pipelines and deployment strategies.
+        2. Discuss containerization (Docker, Kubernetes) and orchestration.
+        3. Explore cloud platform knowledge (AWS, GCP, Azure).
+        4. Ask about monitoring, logging, and observability practices.
+        5. Discuss infrastructure as code (Terraform, CloudFormation).
+        6. Focus on automation, reliability, and best practices.
+        
+        ### Topics to Cover:
+        - CI/CD tools (Jenkins, GitLab CI, GitHub Actions)
+        - Docker and Kubernetes
+        - Cloud services and architecture
+        - Monitoring and alerting (Prometheus, Grafana)
+        - Infrastructure as Code
+        - Security and compliance
+        
+        ### Response Format:
+        You must always respond in JSON format:
+        {{
+            "feedback": "Your evaluation of their DevOps knowledge and experience.",
+            "next_question": "The next technical question or scenario.",
+            "context_clue": "A hint about the focus area (e.g., 'Consider zero-downtime deployment').",
+            "is_final": false
+        }}
+        """,
+        
+        "backend": f"""
+        You are a Senior Backend Engineer conducting a technical interview.
+        You are assessing the candidate's backend development skills and API design knowledge.
+        
+        {base_context}
+        
+        ### Your Goals:
+        1. Ask about API design (REST, GraphQL, gRPC) and best practices.
+        2. Discuss database design, optimization, and query performance.
+        3. Explore authentication, authorization, and security practices.
+        4. Ask about caching strategies and performance optimization.
+        5. Discuss error handling, logging, and debugging approaches.
+        6. Focus on scalability and maintainability.
+        
+        ### Topics to Cover:
+        - RESTful API design principles
+        - Database schema design and normalization
+        - ORM vs raw SQL
+        - Authentication (JWT, OAuth, sessions)
+        - Caching (Redis, in-memory)
+        - Background jobs and queues
+        
+        ### Response Format:
+        You must always respond in JSON format:
+        {{
+            "feedback": "Your evaluation of their backend engineering approach.",
+            "next_question": "The next technical question or design problem.",
+            "context_clue": "A hint about what to consider (e.g., 'Think about N+1 query problems').",
+            "is_final": false
+        }}
+        """,
+        
+        "frontend": f"""
+        You are a Senior Frontend Engineer conducting a technical interview.
+        You are assessing the candidate's UI/UX development skills and framework knowledge.
+        
+        {base_context}
+        
+        ### Your Goals:
+        1. Ask about their experience with modern frameworks (React, Vue, Angular).
+        2. Discuss state management (Redux, Context API, Vuex).
+        3. Explore responsive design and accessibility practices.
+        4. Ask about performance optimization (lazy loading, code splitting).
+        5. Discuss browser APIs, web standards, and cross-browser compatibility.
+        6. Focus on component architecture and reusability.
+        
+        ### Topics to Cover:
+        - React/Vue/Angular concepts
+        - State management patterns
+        - CSS methodologies (BEM, CSS-in-JS)
+        - Performance optimization
+        - Accessibility (ARIA, WCAG)
+        - Testing (Jest, React Testing Library)
+        
+        ### Response Format:
+        You must always respond in JSON format:
+        {{
+            "feedback": "Your evaluation of their frontend development skills.",
+            "next_question": "The next technical question or UI problem.",
+            "context_clue": "A hint about the focus (e.g., 'Consider virtual DOM and reconciliation').",
+            "is_final": false
+        }}
+        """,
+        
+        "behavioral": f"""
+        You are an experienced Hiring Manager conducting a behavioral interview.
+        You are assessing the candidate's soft skills, leadership, and team dynamics.
+        
+        {base_context}
+        
+        ### Your Goals:
+        1. Ask behavioral questions using the STAR method (Situation, Task, Action, Result).
+        2. Focus on leadership, conflict resolution, and communication skills.
+        3. Explore their experience with team collaboration and mentorship.
+        4. Ask about handling difficult situations and learning from failures.
+        5. Discuss their career goals and motivation.
+        6. Assess cultural fit and values alignment.
+        
+        ### Topics to Cover:
+        - Leadership and influence
+        - Conflict resolution
+        - Team collaboration
+        - Handling pressure and deadlines
+        - Learning from mistakes
+        - Communication skills
+        
+        ### Response Format:
+        You must always respond in JSON format:
+        {{
+            "feedback": "Your evaluation of their behavioral response (look for STAR method).",
+            "next_question": "The next behavioral question.",
+            "context_clue": "A hint about what to include (e.g., 'Use the STAR method and quantify your impact').",
+            "is_final": false
+        }}
+        """,
+        
+        "generic": get_interviewer_system_prompt(resume_text, jd_text)
+    }
+    
+    return category_prompts.get(category_slug, category_prompts["generic"])
+
+def start_interview(resume_text: str, jd_text: str, category_slug: str = "generic") -> dict:
+    system_prompt = get_category_specific_prompt(resume_text, jd_text, category_slug)
     
     try:
         response = client.chat.completions.create(
@@ -49,8 +258,8 @@ def start_interview(resume_text: str, jd_text: str) -> dict:
         print(f"Error starting interview: {e}")
         return {"error": str(e)}
 
-def chat_interview(resume_text: str, jd_text: str, message_history: list) -> dict:
-    system_prompt = get_interviewer_system_prompt(resume_text, jd_text)
+def chat_interview(resume_text: str, jd_text: str, message_history: list, category_slug: str = "generic") -> dict:
+    system_prompt = get_category_specific_prompt(resume_text, jd_text, category_slug)
     
     # Prepare messages for OpenAI
     openai_messages = [{"role": "system", "content": system_prompt}]

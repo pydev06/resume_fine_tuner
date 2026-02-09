@@ -19,6 +19,7 @@ import {
 import { useNavigate } from 'react-router-dom'
 import { getApiUrl } from '../lib/api'
 import AnalysisChart from '../components/AnalysisChart'
+import CategorySelector from '../components/CategorySelector'
 
 interface Evaluation {
     id: string
@@ -42,11 +43,47 @@ export default function History() {
     const [loading, setLoading] = useState(true)
     const [expandedId, setExpandedId] = useState<string | null>(null)
     const [downloadingId, setDownloadingId] = useState<string | null>(null)
+    const [selectedDomains, setSelectedDomains] = useState<Record<string, string>>({})
+    const [selectedCategories, setSelectedCategories] = useState<Record<string, string>>({})
     const navigate = useNavigate()
 
     useEffect(() => {
         fetchHistory()
     }, [])
+
+    // Auto-detect domain when evaluation is expanded
+    useEffect(() => {
+        if (expandedId && !selectedDomains[expandedId]) {
+            detectDomainForEvaluation(expandedId)
+        }
+    }, [expandedId])
+
+    const detectDomainForEvaluation = async (evaluationId: string) => {
+        try {
+            const { data: { session } } = await supabase.auth.getSession()
+            const token = session?.access_token
+
+            const formData = new FormData()
+            formData.append('evaluation_id', evaluationId)
+
+            const response = await fetch(getApiUrl('/interview/detect-domain'), {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                },
+                body: formData
+            })
+
+            if (response.ok) {
+                const data = await response.json()
+                setSelectedDomains(prev => ({ ...prev, [evaluationId]: data.domain }))
+            }
+        } catch (error) {
+            console.error('Error detecting domain:', error)
+            // Default to technology on error
+            setSelectedDomains(prev => ({ ...prev, [evaluationId]: 'technology' }))
+        }
+    }
 
     const fetchHistory = async () => {
         try {
@@ -334,10 +371,51 @@ export default function History() {
                                                 </div>
                                             )}
 
+                                            {/* Auto-Detected Domain Display */}
+                                            {selectedDomains[evaluation.id] && (
+                                                <div className="mb-4 flex items-center justify-between">
+                                                    <div className={`flex items-center space-x-2 px-4 py-2 rounded-full border ${selectedDomains[evaluation.id] === 'technology' ? 'bg-gradient-to-r from-indigo-500 to-blue-600 border-indigo-400/30' :
+                                                            selectedDomains[evaluation.id] === 'healthcare' ? 'bg-gradient-to-r from-red-500 to-rose-600 border-red-400/30' :
+                                                                selectedDomains[evaluation.id] === 'construction' ? 'bg-gradient-to-r from-orange-500 to-amber-600 border-orange-400/30' :
+                                                                    selectedDomains[evaluation.id] === 'finance' ? 'bg-gradient-to-r from-emerald-500 to-green-600 border-emerald-400/30' :
+                                                                        selectedDomains[evaluation.id] === 'education' ? 'bg-gradient-to-r from-purple-500 to-violet-600 border-purple-400/30' :
+                                                                            selectedDomains[evaluation.id] === 'legal' ? 'bg-gradient-to-r from-sky-500 to-blue-600 border-sky-400/30' :
+                                                                                selectedDomains[evaluation.id] === 'marketing' ? 'bg-gradient-to-r from-pink-500 to-rose-600 border-pink-400/30' :
+                                                                                    selectedDomains[evaluation.id] === 'sales' ? 'bg-gradient-to-r from-teal-500 to-cyan-600 border-teal-400/30' :
+                                                                                        'bg-gradient-to-r from-indigo-500 to-blue-600 border-indigo-400/30'
+                                                        }`}>
+                                                        <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                                                        <span className="text-xs font-bold text-white uppercase tracking-wider">
+                                                            {selectedDomains[evaluation.id] === 'technology' && 'IT Professional'}
+                                                            {selectedDomains[evaluation.id] === 'healthcare' && 'Healthcare Professional'}
+                                                            {selectedDomains[evaluation.id] === 'construction' && 'Construction Professional'}
+                                                            {selectedDomains[evaluation.id] === 'finance' && 'Finance Professional'}
+                                                            {selectedDomains[evaluation.id] === 'education' && 'Education Professional'}
+                                                            {selectedDomains[evaluation.id] === 'legal' && 'Legal Professional'}
+                                                            {selectedDomains[evaluation.id] === 'marketing' && 'Marketing Professional'}
+                                                            {selectedDomains[evaluation.id] === 'sales' && 'Sales Professional'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Category Selection */}
+                                            <div className="mb-6">
+                                                <CategorySelector
+                                                    onSelect={(slug) => setSelectedCategories(prev => ({ ...prev, [evaluation.id]: slug }))}
+                                                    selectedSlug={selectedCategories[evaluation.id] || 'generic'}
+                                                    domain={selectedDomains[evaluation.id] || 'technology'}
+                                                />
+                                            </div>
+
                                             {/* Actions */}
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                                 <button
-                                                    onClick={() => navigate(`/interview/${evaluation.id}`)}
+                                                    onClick={() => {
+                                                        const domain = selectedDomains[evaluation.id] || 'technology'
+                                                        const category = selectedCategories[evaluation.id] || 'generic'
+                                                        navigate(`/interview/${evaluation.id}?domain=${domain}&category=${category}`)
+                                                    }}
                                                     className="flex items-center justify-center space-x-4 px-10 py-5 bg-white/5 border border-white/10 text-white rounded-3xl font-black text-xs uppercase tracking-widest hover:bg-white/10 transition-all active:scale-95"
                                                 >
                                                     <MessageSquare className="w-5 h-5 text-indigo-400" />
