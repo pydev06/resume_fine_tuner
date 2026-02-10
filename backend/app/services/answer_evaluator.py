@@ -223,6 +223,132 @@ class AnswerEvaluator:
         
         return found_keywords
     
+    def extract_jd_keywords(self, job_description: str, domain: str) -> List[str]:
+        """
+        Extract important keywords from job description
+        
+        Args:
+            job_description: The job description text
+            domain: Professional domain
+        
+        Returns:
+            List of important keywords from JD
+        """
+        if not job_description:
+            return []
+        
+        jd_lower = job_description.lower()
+        
+        # Common stop words to ignore
+        stop_words = {
+            'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
+            'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'were', 'be',
+            'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will',
+            'would', 'should', 'could', 'may', 'might', 'must', 'can', 'this',
+            'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they'
+        }
+        
+        # Extract technical terms (2-3 word phrases and single important words)
+        # Look for capitalized terms, technical acronyms, and domain keywords
+        keywords = []
+        
+        # Find multi-word technical terms (e.g., "machine learning", "REST API")
+        technical_patterns = [
+            r'\b[A-Z][a-z]+\s+[A-Z][a-z]+\b',  # Capitalized phrases
+            r'\b[A-Z]{2,}\b',  # Acronyms (API, REST, SQL)
+            r'\b\w+(?:\.js|\.py|Script|SQL|DB)\b',  # Tech-specific terms
+        ]
+        
+        for pattern in technical_patterns:
+            matches = re.findall(pattern, job_description)
+            keywords.extend([m.lower() for m in matches])
+        
+        # Extract domain-specific important keywords
+        domain_keywords = {
+            'technology': [
+                'python', 'java', 'javascript', 'react', 'node', 'angular', 'vue',
+                'api', 'rest', 'graphql', 'sql', 'nosql', 'mongodb', 'postgresql',
+                'aws', 'azure', 'gcp', 'docker', 'kubernetes', 'microservices',
+                'ci/cd', 'devops', 'agile', 'scrum', 'git', 'testing', 'tdd',
+                'machine learning', 'ai', 'data science', 'analytics', 'cloud',
+                'frontend', 'backend', 'full stack', 'mobile', 'ios', 'android'
+            ],
+            'healthcare': [
+                'ehr', 'emr', 'hipaa', 'patient care', 'clinical', 'diagnosis',
+                'treatment', 'medical records', 'healthcare', 'nursing', 'physician'
+            ],
+            'construction': [
+                'project management', 'safety', 'osha', 'blueprint', 'cad',
+                'construction', 'building', 'contractor', 'site management'
+            ],
+            'finance': [
+                'financial analysis', 'accounting', 'budgeting', 'forecasting',
+                'excel', 'financial modeling', 'reporting', 'compliance', 'audit'
+            ]
+        }
+        
+        # Add domain-specific keywords found in JD
+        domain_kw_list = domain_keywords.get(domain, domain_keywords['technology'])
+        for keyword in domain_kw_list:
+            if re.search(r'\b' + re.escape(keyword) + r'\b', jd_lower):
+                keywords.append(keyword)
+        
+        # Extract important single words (nouns, verbs related to skills)
+        words = re.findall(r'\b[a-z]{4,}\b', jd_lower)
+        word_freq = {}
+        for word in words:
+            if word not in stop_words:
+                word_freq[word] = word_freq.get(word, 0) + 1
+        
+        # Add frequently mentioned words (mentioned 2+ times)
+        frequent_words = [word for word, count in word_freq.items() if count >= 2]
+        keywords.extend(frequent_words[:10])  # Top 10 frequent words
+        
+        # Remove duplicates and return
+        return list(set(keywords))
+    
+    def find_missing_keywords(
+        self,
+        answer: str,
+        job_description: str,
+        domain: str
+    ) -> List[str]:
+        """
+        Find important keywords from JD that are missing in the answer
+        
+        Args:
+            answer: User's answer text
+            job_description: Job description text
+            domain: Professional domain
+        
+        Returns:
+            List of missing keywords
+        """
+        if not job_description or not answer:
+            return []
+        
+        # Extract keywords from JD
+        jd_keywords = self.extract_jd_keywords(job_description, domain)
+        
+        # Check which keywords are missing from answer
+        answer_lower = answer.lower()
+        missing = []
+        
+        for keyword in jd_keywords:
+            # Check if keyword appears in answer
+            if not re.search(r'\b' + re.escape(keyword) + r'\b', answer_lower):
+                missing.append(keyword)
+        
+        # Return top 5 most important missing keywords
+        # Prioritize: acronyms, multi-word terms, then single words
+        acronyms = [k for k in missing if k.isupper() or len(k) <= 4]
+        multi_word = [k for k in missing if ' ' in k]
+        single_word = [k for k in missing if ' ' not in k and k not in acronyms]
+        
+        prioritized = acronyms[:2] + multi_word[:2] + single_word[:3]
+        return prioritized[:5]  # Max 5 missing keywords
+
+    
     def _evaluate_relevance(self, question: str, answer: str) -> float:
         """Evaluate how relevant the answer is to the question"""
         # Extract key terms from question

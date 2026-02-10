@@ -162,7 +162,11 @@ class InterviewAnalyzer:
             'performance_category': evaluation['performance_category'],
             'improvement_suggestions': improvements,
             'keywords_used': evaluation['keywords_used'],
-            'keywords_missing': [],  # TODO: Implement
+            'keywords_missing': self.answer_evaluator.find_missing_keywords(
+                answer,
+                context.get('job_description', ''),
+                context.get('domain', 'technology')
+            ),
             'strengths': evaluation['strengths'],
             'weaknesses': evaluation['weaknesses']
         }
