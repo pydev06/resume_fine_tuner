@@ -22,16 +22,6 @@ export default function ReplayTimeline({ timeline, selectedQuestion, onSelectQue
         }
     };
 
-    const getPerformanceBorder = (category: string) => {
-        switch (category) {
-            case 'strong':
-                return 'border-emerald-500';
-            case 'weak':
-                return 'border-red-500';
-            default:
-                return 'border-amber-500';
-        }
-    };
 
     return (
         <div className="space-y-6">
