@@ -1,8 +1,25 @@
 from openai import OpenAI
 from ..core.config import settings
 import json
+import socket
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+    before_sleep_log
+)
+import logging
 
-client = OpenAI(api_key=settings.openai_api_key)
+# Configure logging
+logger = logging.getLogger(__name__)
+
+# Configure OpenAI client with timeout and retry settings
+client = OpenAI(
+    api_key=settings.openai_api_key,
+    timeout=30.0,  # 30 second timeout
+    max_retries=2   # Built-in retry for OpenAI client
+)
 
 def get_interviewer_system_prompt(resume_text: str, jd_text: str):
     return f"""
@@ -241,7 +258,22 @@ def get_category_specific_prompt(resume_text: str, jd_text: str, category_slug: 
     
     return category_prompts.get(category_slug, category_prompts["generic"])
 
+@retry(
+    retry=retry_if_exception_type((socket.error, ConnectionError, TimeoutError, OSError)),
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    before_sleep=before_sleep_log(logger, logging.WARNING)
+)
 def start_interview(resume_text: str, jd_text: str, category_slug: str = "generic") -> dict:
+    """
+    Start a new interview session with retry logic for network errors.
+    
+    Retries up to 3 times with exponential backoff (2s, 4s, 8s) for:
+    - socket.error (including Errno 35: Resource temporarily unavailable)
+    - ConnectionError
+    - TimeoutError
+    - OSError
+    """
     system_prompt = get_category_specific_prompt(resume_text, jd_text, category_slug)
     
     try:
@@ -254,11 +286,38 @@ def start_interview(resume_text: str, jd_text: str, category_slug: str = "generi
             response_format={"type": "json_object"}
         )
         return json.loads(response.choices[0].message.content)
+    except (socket.error, ConnectionError, TimeoutError, OSError) as e:
+        # Network/socket errors - provide user-friendly message
+        error_msg = str(e)
+        if "Resource temporarily unavailable" in error_msg or "Errno 35" in error_msg:
+            logger.error(f"Network resource unavailable: {error_msg}")
+            return {
+                "error": "Our AI service is temporarily busy. Please try again in a moment.",
+                "error_type": "network_busy",
+                "retry_suggested": True
+            }
+        logger.error(f"Network error starting interview: {error_msg}")
+        return {
+            "error": "Unable to connect to AI service. Please check your connection and try again.",
+            "error_type": "network_error",
+            "retry_suggested": True
+        }
     except Exception as e:
-        print(f"Error starting interview: {e}")
+        logger.error(f"Unexpected error starting interview: {str(e)}")
         return {"error": str(e)}
 
+@retry(
+    retry=retry_if_exception_type((socket.error, ConnectionError, TimeoutError, OSError)),
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    before_sleep=before_sleep_log(logger, logging.WARNING)
+)
 def chat_interview(resume_text: str, jd_text: str, message_history: list, category_slug: str = "generic") -> dict:
+    """
+    Continue an interview conversation with retry logic for network errors.
+    
+    Retries up to 3 times with exponential backoff (2s, 4s, 8s) for network errors.
+    """
     system_prompt = get_category_specific_prompt(resume_text, jd_text, category_slug)
     
     # Prepare messages for OpenAI
@@ -277,8 +336,24 @@ def chat_interview(resume_text: str, jd_text: str, message_history: list, catego
             response_format={"type": "json_object"}
         )
         return json.loads(response.choices[0].message.content)
+    except (socket.error, ConnectionError, TimeoutError, OSError) as e:
+        # Network/socket errors - provide user-friendly message
+        error_msg = str(e)
+        if "Resource temporarily unavailable" in error_msg or "Errno 35" in error_msg:
+            logger.error(f"Network resource unavailable in chat: {error_msg}")
+            return {
+                "error": "Our AI service is temporarily busy. Please try again in a moment.",
+                "error_type": "network_busy",
+                "retry_suggested": True
+            }
+        logger.error(f"Network error in interview chat: {error_msg}")
+        return {
+            "error": "Unable to connect to AI service. Please check your connection and try again.",
+            "error_type": "network_error",
+            "retry_suggested": True
+        }
     except Exception as e:
-        print(f"Error in interview chat: {e}")
+        logger.error(f"Unexpected error in interview chat: {str(e)}")
         return {"error": str(e)}
 
 def transcribe_audio(audio_file) -> str:

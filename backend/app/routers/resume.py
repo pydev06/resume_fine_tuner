@@ -39,8 +39,8 @@ async def analyze_resume_endpoint(
     if not resume and not resume_id:
         raise HTTPException(status_code=400, detail="Either a resume file or an existing resume ID is required")
 
-    # Extract user ID from UserResponse object
-    user_id = current_user.user.id
+    # Extract user ID from current_user dict
+    user_id = current_user['id']
 
     # 0. Check credits
     credits = get_user_credits(user_id)
@@ -146,7 +146,7 @@ async def analyze_resume_endpoint(
             current_jd_id = existing_jd_id
         else:
             # Create new records
-            resume_record = save_resume_record(user_id, file_url, resume.filename, resume_text)
+            resume_record = save_resume_record(user_id, file_url, filename, resume_text)
             current_resume_id = resume_record["id"]
             
             jd_record = save_job_description(user_id, jd_text, job_description_url, job_title or jd_title, company_name)
@@ -172,7 +172,7 @@ async def analyze_resume_endpoint(
         print(f"Error saving to database: {str(e)}")
 
     analysis_result["parsed_text"] = resume_text
-    analysis_result["resume_name"] = resume.filename
+    analysis_result["resume_name"] = filename
     return analysis_result
 
 
@@ -182,7 +182,7 @@ async def get_history(
     current_user = Depends(get_current_user)
 ):
     """Get user's evaluation history"""
-    user_id = current_user.user.id
+    user_id = current_user['id']
     try:
         evaluations = get_user_evaluations(user_id, limit)
         return {"evaluations": evaluations}
@@ -196,7 +196,7 @@ async def delete_evaluation(
     current_user = Depends(get_current_user)
 ):
     """Delete a specific evaluation from history"""
-    user_id = current_user.user.id
+    user_id = current_user['id']
     success = delete_user_evaluation(user_id, evaluation_id)
     if not success:
         raise HTTPException(status_code=404, detail="Evaluation not found or could not be deleted")
@@ -208,7 +208,7 @@ async def get_resumes(
     current_user = Depends(get_current_user)
 ):
     """Get user's uploaded resumes"""
-    user_id = current_user.user.id
+    user_id = current_user['id']
     try:
         resumes = get_user_resumes(user_id)
         return {"resumes": resumes}

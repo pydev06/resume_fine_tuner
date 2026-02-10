@@ -12,7 +12,7 @@ stripe.api_key = settings.stripe_secret_key
 @router.get("/credits")
 async def get_credits(current_user = Depends(get_current_user)):
     try:
-        credits = get_user_credits(current_user.user.id)
+        credits = get_user_credits(current_user['id'])
         return {"credits": credits}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -48,14 +48,14 @@ async def create_checkout(
                 success_url=f"{settings.frontend_url}/dashboard?status=success",
                 cancel_url=f"{settings.frontend_url}/pricing",
                 metadata={
-                    "user_id": current_user.user.id,
+                    "user_id": current_user['id'],
                     "credits": prices[plan]["credits"]
                 }
             )
             return {"url": checkout_session.url}
             
         elif provider == "razorpay":
-            order = create_razorpay_order(prices[plan]["inr"], current_user.user.id)
+            order = create_razorpay_order(prices[plan]["inr"], current_user['id'])
             return {
                 "order_id": order["id"],
                 "amount": order["amount"],
@@ -66,7 +66,7 @@ async def create_checkout(
         elif provider == "lemonsqueezy":
             # Store ID and Variant ID would ideally be in config or passed from frontend
             # For now using placeholders that user should fill
-            url = create_ls_checkout("YOUR_STORE_ID", "YOUR_VARIANT_ID", current_user.user.id)
+            url = create_ls_checkout("YOUR_STORE_ID", "YOUR_VARIANT_ID", current_user['id'])
             if not url:
                 raise HTTPException(status_code=500, detail="Lemon Squeezy checkout creation failed")
             return {"url": url}
@@ -90,7 +90,7 @@ async def verify_razorpay(data: dict, current_user = Depends(get_current_user)):
     )
     if is_valid:
         credits = int(data.get("credits", 0))
-        add_user_credits(current_user.user.id, credits)
+        add_user_credits(current_user['id'], credits)
         return {"status": "success"}
     else:
         raise HTTPException(status_code=400, detail="Invalid signature")

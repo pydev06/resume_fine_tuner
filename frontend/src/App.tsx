@@ -5,6 +5,7 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import History from './pages/History'
 import MockInterview from './pages/MockInterview'
+import InterviewReplay from './pages/InterviewReplay'
 import Pricing from './pages/Pricing'
 import ProtectedRoute from './components/ProtectedRoute'
 
@@ -20,6 +21,7 @@ function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/history" element={<History />} />
             <Route path="/interview/:evaluationId" element={<MockInterview />} />
+            <Route path="/interview/:sessionId/replay" element={<InterviewReplay />} />
           </Route>
         </Route>
       </Routes>

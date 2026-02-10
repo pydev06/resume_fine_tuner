@@ -95,7 +95,7 @@ async def start_interview_endpoint(
     current_user = Depends(get_current_user)
 ):
     try:
-        user_id = current_user.user.id
+        user_id = current_user['id']
         
         # 1. Check if user has credits
         credits = get_user_credits(user_id)
@@ -116,7 +116,7 @@ async def start_interview_endpoint(
         jd_text = evaluation["job_descriptions"]["content"]
         
         # 2. Check for an existing active session for this evaluation + category
-        existing_session = supabase.table("interview_sessions").select("*").eq("evaluation_id", evaluation_id).eq("user_id", current_user.user.id).eq("category_slug", category_slug).eq("status", "active").order("created_at", desc=True).limit(1).execute()
+        existing_session = supabase.table("interview_sessions").select("*").eq("evaluation_id", evaluation_id).eq("user_id", current_user['id']).eq("category_slug", category_slug).eq("status", "active").order("created_at", desc=True).limit(1).execute()
         
         if existing_session.data:
             session = existing_session.data[0]
@@ -151,7 +151,7 @@ async def start_interview_endpoint(
         }
         
         session_data = {
-            "user_id": current_user.user.id,
+            "user_id": current_user['id'],
             "evaluation_id": evaluation_id,
             "category_id": category["id"],
             "category_slug": category_slug,
@@ -175,6 +175,9 @@ async def start_interview_endpoint(
             "context_clue": ai_response.get("context_clue", "")
         }
         
+    except HTTPException:
+        # Re-raise HTTP exceptions (like 402, 404) without converting to 500
+        raise
     except Exception as e:
         print(f"Error starting interview: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

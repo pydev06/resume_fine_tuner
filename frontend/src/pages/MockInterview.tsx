@@ -39,6 +39,7 @@ export default function MockInterview() {
     const [isRecording, setIsRecording] = useState(false)
     const [recordingLoading, setRecordingLoading] = useState(false)
     const [playingMessageIdx, setPlayingMessageIdx] = useState<number | null>(null)
+    const [error, setError] = useState<{ message: string; isInsufficientCredits: boolean } | null>(null)
     const scrollRef = useRef<HTMLDivElement>(null)
     const recorderRef = useRef<AudioRecorder>(new AudioRecorder())
 
@@ -77,8 +78,10 @@ export default function MockInterview() {
     }, [messages])
 
     const startSession = async () => {
+        setStarting(true)
+        setError(null) // Clear any previous errors
+
         try {
-            setStarting(true)
             const { data: { session: authSession } } = await supabase.auth.getSession()
             const token = authSession?.access_token
 
@@ -94,9 +97,21 @@ export default function MockInterview() {
                 body: formData
             })
 
-            if (!response.ok) throw new Error('Failed to start interview')
-
             const data = await response.json()
+
+            // Handle insufficient credits FIRST
+            if (response.status === 402) {
+                const message = data.detail || 'Insufficient credits. Please top up to start a new interview.'
+                setError({ message, isInsufficientCredits: true })
+                setStarting(false)
+                return
+            }
+
+            // Handle other errors
+            if (!response.ok) {
+                throw new Error(data.detail || 'Failed to start interview')
+            }
+
             setSessionId(data.session_id)
 
             if (data.messages && data.messages.length > 0) {
@@ -108,15 +123,14 @@ export default function MockInterview() {
                     context_clue: data.context_clue
                 }])
             }
+
+            setStarting(false)
         } catch (error: any) {
             console.error('Error starting session:', error)
-            if (error.message.includes('402') || (error.response && error.response.status === 402)) {
-                alert('Insufficient credits. Redirecting to pricing.')
-                navigate('/pricing')
-            } else {
-                alert('Failed to start interview session.')
-            }
-        } finally {
+            setError({
+                message: error.message || 'Failed to start interview session. Please try again.',
+                isInsufficientCredits: false
+            })
             setStarting(false)
         }
     }
@@ -232,6 +246,85 @@ export default function MockInterview() {
             console.error('Error playing speech:', error)
             setPlayingMessageIdx(null)
         }
+    }
+
+    // Error State UI
+    if (error) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[80vh] space-y-8 relative overflow-hidden px-4">
+                <div className="absolute inset-0 bg-red-600/10 blur-[150px] rounded-full" />
+                <div className="relative max-w-2xl w-full">
+                    <div className="glass-card p-12 rounded-[3rem] border-red-500/20 bg-red-500/5 text-center space-y-8">
+                        {error.isInsufficientCredits ? (
+                            <>
+                                <div className="relative mx-auto w-24 h-24">
+                                    <div className="absolute inset-0 bg-red-500/20 blur-2xl rounded-full scale-150 animate-pulse" />
+                                    <div className="relative p-6 bg-slate-900/80 rounded-full border border-red-500/30">
+                                        <svg className="w-12 h-12 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                    </div>
+                                </div>
+                                <div>
+                                    <h2 className="text-3xl font-black text-white tracking-tight mb-4">Out of Credits!</h2>
+                                    <p className="text-slate-300 font-medium text-lg max-w-md mx-auto leading-relaxed">
+                                        {error.message}
+                                    </p>
+                                </div>
+                                <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
+                                    <button
+                                        onClick={() => navigate('/pricing')}
+                                        className="px-10 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-xl shadow-indigo-600/20"
+                                    >
+                                        💳 Buy Credits
+                                    </button>
+                                    <button
+                                        onClick={() => navigate(-1)}
+                                        className="px-10 py-4 bg-white/5 text-slate-300 rounded-2xl font-bold text-sm hover:bg-white/10 transition-all border border-white/10"
+                                    >
+                                        Go Back
+                                    </button>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <div className="relative mx-auto w-24 h-24">
+                                    <div className="absolute inset-0 bg-red-500/20 blur-2xl rounded-full scale-150" />
+                                    <div className="relative p-6 bg-slate-900/80 rounded-full border border-red-500/30">
+                                        <svg className="w-12 h-12 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                        </svg>
+                                    </div>
+                                </div>
+                                <div>
+                                    <h2 className="text-3xl font-black text-white tracking-tight mb-4">Something Went Wrong</h2>
+                                    <p className="text-slate-300 font-medium text-lg max-w-md mx-auto leading-relaxed">
+                                        {error.message}
+                                    </p>
+                                </div>
+                                <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
+                                    <button
+                                        onClick={() => {
+                                            setError(null)
+                                            startSession()
+                                        }}
+                                        className="px-10 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-xl shadow-indigo-600/20"
+                                    >
+                                        Try Again
+                                    </button>
+                                    <button
+                                        onClick={() => navigate(-1)}
+                                        className="px-10 py-4 bg-white/5 text-slate-300 rounded-2xl font-bold text-sm hover:bg-white/10 transition-all border border-white/10"
+                                    >
+                                        Go Back
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                </div>
+            </div>
+        )
     }
 
     if (starting) {
